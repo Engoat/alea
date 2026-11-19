@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# notes de travail et configuration d outil : pas publiées
+plan.md
+decision.md
+.claude/
+AGENTS.md
