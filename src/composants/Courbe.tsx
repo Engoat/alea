@@ -39,8 +39,8 @@ export function Courbe({ loi, resultat }: { loi: Loi; resultat: number }) {
             return <Rect key={i} x={i * w + Math.min(1, w * 0.15)} y={HAUTEUR - h} width={Math.max(1, w - Math.min(2, w * 0.3))} height={Math.max(h, b.p > 0 ? 1 : 0)} fill={b.contient ? couleurs.encre : couleurs.filet} />;
           })}
           <Line x1={0} x2={largeur} y1={HAUTEUR} y2={HAUTEUR} stroke={couleurs.encre2} strokeWidth={1} />
-          <SvgText x={0} y={HAUTEUR + 13} fontSize={11} fill={couleurs.encre2}>{loi.min}</SvgText>
-          <SvgText x={largeur} y={HAUTEUR + 13} fontSize={11} fill={couleurs.encre2} textAnchor="end">{loi.min + n - 1}{coupee ? "+" : ""}</SvgText>
+          <SvgText x={0} y={HAUTEUR + 13} fontSize={11} fontFamily="sans-serif" fill={couleurs.encre2}>{loi.min}</SvgText>
+          <SvgText x={largeur} y={HAUTEUR + 13} fontSize={11} fontFamily="sans-serif" fill={couleurs.encre2} textAnchor="end">{loi.min + n - 1}{coupee ? "+" : ""}</SvgText>
         </Svg>
       )}
     </View>
