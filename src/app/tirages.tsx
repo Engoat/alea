@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { AccessibilityInfo, Platform, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
+import * as Presse from "expo-clipboard";
 import { Bouton } from "../composants/Bouton";
 import { Cartes, Defilement, Piece } from "../composants/Formes";
 import { Roue } from "../composants/Roue";
@@ -10,6 +11,7 @@ import {
   ecrireListeCourante, ecrireListes, identifiant, lireListeCourante, lireListes, type Liste,
 } from "../stockage";
 import { executer, lireNoms, verifier, type CodeErreur, type Demande, type Issue } from "../tirages/moteur";
+import { controler, groupes, preparer, reveler as revelerPreuve, type Controle, type Preparation, type PreuveTirage } from "../tirages/preuve";
 import { couleurs, largeurMax, rayon } from "../theme";
 
 type Mode = "un" | "plusieurs" | "ordre" | "equipes" | "pile";
@@ -47,6 +49,14 @@ export default function EcranTirages() {
   const [nomListe, setNomListe] = useState("");
   const [noms, setNoms] = useState("");
 
+  // tirage vérifiable : engagement publié (attente), mot d'un participant, puis preuve complète
+  const [verifiable, setVerifiable] = useState(false);
+  const [attente, setAttente] = useState<Preparation | null>(null);
+  const [mot, setMot] = useState("");
+  const [preuve, setPreuve] = useState<PreuveTirage | null>(null);
+  const [controle, setControle] = useState<Controle | null>(null);
+  const [copie, setCopie] = useState(false);
+
   const [issue, setIssue] = useState<Issue | null>(null);
   const [erreur, setErreur] = useState<CodeErreur | null>(null);
   const [cycleRecommence, setCycleRecommence] = useState(false);
@@ -75,7 +85,8 @@ export default function EcranTirages() {
 
   const majListes = (suite: Liste[]) => { setListes(suite); void ecrireListes(suite); };
   const majListe = (f: (l: Liste) => Liste) => majListes(listes.map((l) => (l.id === courante ? f(l) : l)));
-  const choisir = (id: string | null) => { setCourante(id); void ecrireListeCourante(id); setIssue(null); setErreur(null); };
+  const effacerTirage = () => { setIssue(null); setErreur(null); setAttente(null); setPreuve(null); setControle(null); };
+  const choisir = (id: string | null) => { setCourante(id); void ecrireListeCourante(id); effacerTirage(); };
 
   const creerListe = () => {
     const nom = nomListe.trim();
@@ -108,13 +119,10 @@ export default function EcranTirages() {
     }
   };
 
-  const tirer = () => {
-    const d = demande();
-    const e = verifier(d, gens);
-    setErreur(e);
-    if (e) return;
-    const avant = liste?.restants;
-    const res = executer(d, gens, flux);
+  const verifiableActif = verifiable && !(mode === "un" && sansRemise);
+
+  /** montre un résultat déjà tiré (animations comprises) */
+  const afficher = (res: Issue, avant?: string[]) => {
     setIssue(res);
     setCycleRecommence(res.mode === "un" && !!res.nouveauCycle && avant !== undefined);
     if (res.mode === "un" && res.restants) majListe((l) => ({ ...l, restants: res.restants }));
@@ -126,6 +134,34 @@ export default function EcranTirages() {
     const immediat = !roule || res.mode === "equipes" || res.mode === "plusieurs" || res.mode === "ordre";
     setRevele(immediat);
     setVisibles(0);
+  };
+
+  const tirer = () => {
+    const d = demande();
+    const e = verifier(d, gens);
+    setErreur(e);
+    if (e) return;
+    setPreuve(null); setControle(null); setCopie(false);
+    if (verifiableActif) {
+      // on publie d'abord l'engagement ; le tirage n'a lieu qu'après le mot d'un participant
+      setIssue(null); setMot(""); setAttente(preparer(d, gens));
+      return;
+    }
+    setAttente(null);
+    afficher(executer(d, gens, flux), liste?.restants);
+  };
+
+  const reveler = () => {
+    if (!attente || !mot.trim()) return;
+    const p = revelerPreuve(attente, mot);
+    setPreuve(p); setAttente(null);
+    afficher(p.resultat);
+  };
+
+  const copier = async () => {
+    if (!preuve) return;
+    await Presse.setStringAsync(JSON.stringify(preuve));
+    setCopie(true);
   };
 
   // les listes (plusieurs, ordre) se dévoilent une ligne après l'autre
@@ -158,7 +194,7 @@ export default function EcranTirages() {
 
         {/* mode */}
         <View style={styles.touches}>
-          {MODES.map((m) => <Bouton key={m} titre={t(`tirages.modes.${m}`)} petit actif={m === mode} onPress={() => { setMode(m); setIssue(null); setErreur(null); }} />)}
+          {MODES.map((m) => <Bouton key={m} titre={t(`tirages.modes.${m}`)} petit actif={m === mode} onPress={() => { setMode(m); effacerTirage(); }} />)}
         </View>
 
         {/* listes */}
@@ -237,8 +273,21 @@ export default function EcranTirages() {
           </View>
         )}
 
+        <Bouton titre={t("tirages.verifiable")} petit actif={verifiableActif} onPress={() => { setVerifiable((v) => !v); effacerTirage(); }} style={styles.alignGauche} />
+        <Text style={styles.discret}>{mode === "un" && sansRemise ? t("tirages.verifiableSansRemise") : t("tirages.verifiableAide")}</Text>
         <Bouton titre={t("tirages.tirer")} plein onPress={tirer} style={styles.tirer} />
         {erreur && <Text accessibilityRole="alert" style={styles.erreur}>{t(`tirages.erreurs.${erreur}`)}</Text>}
+
+        {attente && (
+          <View style={styles.carte}>
+            <Text style={styles.libelle}>{t("tirages.engagement")}</Text>
+            <Text style={styles.mono} selectable>{groupes(attente.engagement)}</Text>
+            <Text style={styles.discret}>{t("tirages.engagementAide")}</Text>
+            <TextInput style={styles.champ} value={mot} onChangeText={setMot} placeholder={t("tirages.motPlaceholder")} placeholderTextColor={couleurs.filet}
+              accessibilityLabel={t("tirages.mot")} autoCapitalize="none" autoCorrect={false} onSubmitEditing={reveler} />
+            <Bouton titre={t("tirages.reveler")} plein onPress={reveler} />
+          </View>
+        )}
 
         {/* résultat */}
         {mode === "un" && gens.length > 0 && (
@@ -297,6 +346,24 @@ export default function EcranTirages() {
           </View>
         )}
 
+        {preuve && revele && (
+          <View style={styles.carte}>
+            <Text style={styles.libelle}>{t("tirages.preuve")}</Text>
+            <Text style={styles.discret}>{t("tirages.engagement")}</Text>
+            <Text style={styles.mono} selectable>{groupes(preuve.engagement)}</Text>
+            <Text style={styles.discret}>{t("tirages.mot")}</Text>
+            <Text style={styles.mono} selectable>{preuve.mot}</Text>
+            <Text style={styles.discret}>{t("tirages.graine")}</Text>
+            <Text style={styles.mono} selectable>{groupes(preuve.graine)}</Text>
+            <View style={styles.ligne}>
+              <Bouton titre={t("tirages.copier")} petit onPress={() => void copier()} />
+              <Bouton titre={t("tirages.verifier")} petit onPress={() => setControle(controler(preuve))} />
+            </View>
+            {copie && <Text style={styles.discret}>{t("tirages.copie")}</Text>}
+            {controle?.ok && <Text style={controle.engagementOk && controle.resultatOk ? styles.ok : styles.erreur}>{controle.engagementOk && controle.resultatOk ? t("tirages.verifOk") : t("tirages.verifEchec")}</Text>}
+          </View>
+        )}
+
         <Text style={[styles.discret, styles.section]}>{t("tirages.aide")}</Text>
       </ScrollView>
     </SafeAreaView>
@@ -319,6 +386,9 @@ const styles = StyleSheet.create({
   pasValeur: { minWidth: 24, textAlign: "center", fontSize: 16, fontWeight: "700", color: couleurs.encre },
   texte: { fontSize: 15, color: couleurs.encre },
   discret: { fontSize: 13, color: couleurs.encre2 },
+  alignGauche: { alignSelf: "flex-start" },
+  mono: { fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }), fontSize: 13, color: couleurs.encre, lineHeight: 20 },
+  ok: { fontSize: 14, fontWeight: "700", color: couleurs.encre },
   tirer: { marginTop: 8, minHeight: 52 },
   erreur: { color: couleurs.erreur, fontSize: 14, marginTop: 8 },
   resultat: { alignItems: "center", marginTop: 16, gap: 12 },

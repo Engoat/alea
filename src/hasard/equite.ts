@@ -20,7 +20,7 @@ export const VERSION = "alea/v1";
 export function canonique(x: unknown): string {
   if (Array.isArray(x)) return `[${x.map(canonique).join(",")}]`;
   if (x && typeof x === "object") {
-    return `{${Object.keys(x).sort().map((k) => `${JSON.stringify(k)}:${canonique((x as Record<string, unknown>)[k])}`).join(",")}}`;
+    return `{${Object.keys(x).filter((k) => (x as Record<string, unknown>)[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonique((x as Record<string, unknown>)[k])}`).join(",")}}`;
   }
   return JSON.stringify(x);
 }

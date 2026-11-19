@@ -22,6 +22,7 @@ export default function Disposition() {
       >
         <Tabs.Screen name="index" options={{ title: t("onglets.des") }} />
         <Tabs.Screen name="tirages" options={{ title: t("onglets.tirages") }} />
+        <Tabs.Screen name="verifier" options={{ title: t("onglets.verifier") }} />
       </Tabs>
     </>
   );
